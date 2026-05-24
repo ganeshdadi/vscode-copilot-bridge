@@ -6,6 +6,8 @@ import { isAuthorized } from './auth';
 import { handleHealthCheck } from './routes/health';
 import { handleModelsRequest } from './routes/models';
 import { handleChatCompletion } from './routes/chat';
+import { handleResponsesCreate } from './routes/responses';
+import { handleCapabilitiesRequest } from './routes/capabilities';
 import { writeErrorResponse, writeNotFound, writeRateLimit, writeUnauthorized } from './utils';
 import { ensureOutput, verbose } from '../log';
 import { updateStatus } from '../status';
@@ -65,6 +67,10 @@ export const startServer = async (): Promise<void> => {
     await handleModelsRequest(res);
   });
 
+  app.get('/v1/capabilities', (_req: IncomingMessage, res: ServerResponse) => {
+    handleCapabilitiesRequest(res);
+  });
+
   app.post('/v1/chat/completions', async (req: IncomingMessage, res: ServerResponse) => {
     // Rate limiting check
     if (state.activeRequests >= config.maxConcurrent) {
@@ -77,6 +83,24 @@ export const startServer = async (): Promise<void> => {
     
     try {
       await handleChatCompletion(req, res);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      writeErrorResponse(res, 500, msg || 'internal_error', 'server_error', 'internal_error');
+    }
+  });
+
+  app.post('/v1/responses', async (req: IncomingMessage, res: ServerResponse) => {
+    // Rate limiting check
+    if (state.activeRequests >= config.maxConcurrent) {
+      if (config.verbose) {
+        verbose(`429 throttled (active=${state.activeRequests}, max=${config.maxConcurrent})`);
+      }
+      writeRateLimit(res);
+      return;
+    }
+
+    try {
+      await handleResponsesCreate(req, res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       writeErrorResponse(res, 500, msg || 'internal_error', 'server_error', 'internal_error');

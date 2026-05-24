@@ -15,10 +15,12 @@ interface HealthResponse {
   readonly version: string;
   readonly features: {
     readonly chat_completions: boolean;
+    readonly responses_api: boolean;
     readonly streaming: boolean;
     readonly tool_calling: boolean;
     readonly function_calling: boolean;
     readonly models_list: boolean;
+    readonly capabilities_endpoint: boolean;
   };
   readonly active_requests: number;
   readonly model_attempted?: boolean;
@@ -52,10 +54,12 @@ export const handleHealthCheck = async (res: ServerResponse, v: boolean): Promis
     version: vscode.version,
     features: {
       chat_completions: true,
+      responses_api: true,
       streaming: true,
       tool_calling: true,
       function_calling: true, // deprecated but supported
-      models_list: true
+      models_list: true,
+      capabilities_endpoint: true
     },
     active_requests: state.activeRequests,
     model_attempted: state.modelAttempted

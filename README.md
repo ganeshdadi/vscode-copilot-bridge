@@ -15,8 +15,9 @@ Copilot Bridge lets you access your personal Copilot session locally through an 
 ## ✨ Key Features
 
 - Local HTTP server locked to `127.0.0.1`
-- OpenAI-style `/v1/chat/completions`, `/v1/models`, and `/health` endpoints
+- OpenAI-style `/v1/chat/completions`, `/v1/responses`, `/v1/models`, `/v1/capabilities`, and `/health` endpoints
 - SSE streaming for incremental responses
+- Responses API streaming emits compatibility events for tool calls, including synthetic `response.function_call_arguments.delta` chunks plus `.done`
 - Real-time model discovery via VS Code Language Model API
 - Concurrency and rate limits to keep VS Code responsive
 - Optional bearer token authentication (`bridge.token` enables auth when set)
@@ -44,6 +45,7 @@ Copilot Bridge lets you access your personal Copilot session locally through an 
 | Local, single-user loopback use | Multi-user or shared deployments |
 | Testing local agents or CLI integrations | Continuous automation or CI/CD use |
 | Educational / experimental use | Public or commercial API hosting |
+| Responses API compatibility layer (`/v1/responses`) | Full OpenAI-native behavior guarantees for all event semantics |
 
 ---
 
@@ -96,6 +98,20 @@ List models:
 
 ```bash
 curl http://127.0.0.1:$PORT/v1/models
+
+Create a response (Responses API compatible):
+
+```bash
+curl -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","input":"Say hello from the Responses API bridge."}' \
+  http://127.0.0.1:$PORT/v1/responses
+```
+
+Inspect bridge capability flags:
+
+```bash
+curl http://127.0.0.1:$PORT/v1/capabilities
+```
 ```
 
 Stream a completion:

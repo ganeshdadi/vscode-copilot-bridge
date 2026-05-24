@@ -62,7 +62,7 @@
         "bridge.token": {
           "type": "string",
           "default": "",
-          "description": "Bearer token required in every Authorization header. Leave empty to block access."
+          "description": "Optional bearer token. When set, requests must include Authorization: Bearer <token>."
         },
         "bridge.historyWindow": {
           "type": "number",

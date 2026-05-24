@@ -70,6 +70,32 @@ export interface ChatCompletionRequest {
   readonly [key: string]: unknown;
 }
 
+export interface ResponsesInputMessage {
+  readonly role: 'system' | 'user' | 'assistant' | 'tool';
+  readonly content?: string | MessageContent[] | null;
+  readonly tool_calls?: ToolCall[];
+  readonly tool_call_id?: string;
+  readonly function_call?: FunctionCall;
+}
+
+export interface ResponsesInputItem {
+  readonly type?: string;
+  readonly role?: ResponsesInputMessage['role'];
+  readonly content?: ResponsesInputMessage['content'];
+  readonly [key: string]: unknown;
+}
+
+export interface ResponsesRequest {
+  readonly model?: string;
+  readonly input: string | ResponsesInputMessage[] | ResponsesInputItem[];
+  readonly instructions?: string;
+  readonly stream?: boolean;
+  readonly tools?: Tool[];
+  readonly tool_choice?: ChatCompletionRequest['tool_choice'];
+  readonly parallel_tool_calls?: boolean;
+  readonly [key: string]: unknown;
+}
+
 const VALID_ROLES = ['system', 'user', 'assistant', 'tool'] as const;
 type Role = typeof VALID_ROLES[number];
 const isValidRole = (role: unknown): role is Role => typeof role === 'string' && VALID_ROLES.includes(role as Role);
@@ -104,6 +130,26 @@ export const isChatCompletionRequest = (body: unknown): body is ChatCompletionRe
   if (!('messages' in candidate)) return false;
   const messages = candidate.messages;
   return Array.isArray(messages) && messages.length > 0 && messages.every(isChatMessage);
+};
+
+export const isResponsesRequest = (body: unknown): body is ResponsesRequest => {
+  if (typeof body !== 'object' || body === null) return false;
+  const candidate = body as Record<string, unknown>;
+  if (!('input' in candidate)) return false;
+
+  const input = candidate.input;
+  if (typeof input === 'string') return input.length > 0;
+
+  if (!Array.isArray(input) || input.length === 0) return false;
+  return input.every((item) => {
+    if (typeof item !== 'object' || item === null) return false;
+    const record = item as Record<string, unknown>;
+    if ('role' in record) return isValidRole(record.role);
+    if ('type' in record && record.type === 'message' && 'role' in record) {
+      return isValidRole(record.role);
+    }
+    return false;
+  });
 };
 
 // Convert OpenAI tools to VS Code Language Model tools
