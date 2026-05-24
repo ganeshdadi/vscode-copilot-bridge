@@ -1,0 +1,102 @@
+{
+  "private": false,
+  "icon": "images/icon.png",
+  "name": "copilot-bridge",
+  "displayName": "Copilot Bridge",
+  "description": "Local OpenAI-compatible interface built on the public VS Code Language Model API (vscode.lm).",
+  "version": "1.2.0",
+  "publisher": "thinkability",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/larsbaunwall/vscode-copilot-bridge.git"
+  },
+  "author": "larsbaunwall",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "license": "Apache License 2.0",
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "categories": [
+    "AI"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bridge.enable",
+        "title": "Copilot Bridge: Enable"
+      },
+      {
+        "command": "bridge.disable",
+        "title": "Copilot Bridge: Disable"
+      },
+      {
+        "command": "bridge.status",
+        "title": "Copilot Bridge: Status"
+      }
+    ],
+    "configuration": {
+      "title": "Copilot Bridge",
+      "properties": {
+        "bridge.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start the Copilot Bridge automatically when VS Code starts. Uses only the public `vscode.lm` Language Model API."
+        },
+        "bridge.port": {
+          "type": "number",
+          "default": 0,
+          "description": "Port for the local HTTP server. 0 picks a random ephemeral port."
+        },
+        "bridge.token": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token required in every Authorization header. Leave empty to block access."
+        },
+        "bridge.historyWindow": {
+          "type": "number",
+          "default": 3,
+          "description": "Number of user/assistant turns to include (system message is kept separately)."
+        },
+        "bridge.maxConcurrent": {
+          "type": "number",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Maximum concurrent /v1/chat/completions requests. Excess requests return 429."
+        },
+        "bridge.verbose": {
+          "type": "boolean",
+          "default": false,
+          "description": "Verbose logging to the 'Copilot Bridge' output channel."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "vscode:prepublish": "npm run compile",
+    "package": "npx vsce package"
+  },
+  "dependencies": {
+    "polka": "^0.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.6.0",
+    "typescript": "^5.4.0"
+  }
+}

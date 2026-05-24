@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension (Copilot Bridge)",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile",
+      "env": {
+        "BRIDGE_VERBOSE": "1",
+        "BRIDGE_ENABLED": "1",
+        "BRIDGE_PORT": "3333"
+      }
+    },
+    {
+      "name": "Run Extension + Attach Debug Server",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: watch",
+      "env": {
+        "BRIDGE_VERBOSE": "1",
+        "BRIDGE_ENABLED": "1",
+        "BRIDGE_PORT": "3333"
+      }
+    }
+  ]
+}
