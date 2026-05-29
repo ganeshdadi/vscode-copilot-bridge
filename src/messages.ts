@@ -156,17 +156,7 @@ export const isResponsesRequest = (body: unknown): body is ResponsesRequest => {
   const input = candidate.input;
   if (typeof input === 'string') return input.length > 0;
 
-  if (!Array.isArray(input) || input.length === 0) return false;
-  return input.every((item) => {
-    if (typeof item === 'string') return item.length > 0;
-    if (typeof item !== 'object' || item === null) return false;
-    const record = item as Record<string, unknown>;
-    if ('role' in record) return isValidResponsesRole(record.role);
-    if ('type' in record && record.type === 'message' && 'role' in record) {
-      return isValidResponsesRole(record.role);
-    }
-    return typeof record.type === 'string';
-  });
+  return Array.isArray(input) && input.length > 0;
 };
 
 // Convert OpenAI tools to VS Code Language Model tools
