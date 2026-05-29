@@ -4,10 +4,11 @@ import { state } from '../../state';
 import {
   isResponsesRequest,
   type ResponsesRequest,
+  type ResponsesFunctionTool,
   type ChatMessage,
+  type MessageContent,
   normalizeMessagesLM,
   convertOpenAIToolsToLM,
-  convertFunctionsToTools,
   type Tool,
 } from '../../messages';
 import { readJson, writeErrorResponse, writeJson } from '../utils';
@@ -81,7 +82,7 @@ export async function handleResponsesCreate(req: IncomingMessage, res: ServerRes
   try {
     const body = await readJson(req);
     if (!isResponsesRequest(body)) {
-      writeErrorResponse(res, 400, 'invalid request', 'invalid_request_error', 'invalid_payload');
+      writeResponsesError(res, 400, 'invalid request', 'invalid_request_error', 'invalid_payload');
       return;
     }
 
@@ -93,7 +94,7 @@ export async function handleResponsesCreate(req: IncomingMessage, res: ServerRes
     const config = getBridgeConfig();
     const chatMessages = toChatMessages(body);
     if (chatMessages.length === 0) {
-      writeErrorResponse(res, 400, 'input must include at least one message', 'invalid_request_error', 'invalid_input');
+      writeResponsesError(res, 400, 'input must include at least one message', 'invalid_request_error', 'invalid_input');
       return;
     }
 
@@ -101,6 +102,7 @@ export async function handleResponsesCreate(req: IncomingMessage, res: ServerRes
     const lmMessages = normalizeMessagesLM(chatMessages, config.historyWindow);
     const lmTools = convertOpenAIToolsToLM(mergedTools);
     const requestOptions: vscode.LanguageModelChatRequestOptions = lmTools.length > 0 ? { tools: lmTools } : {};
+    verbose(`Responses normalized model=${body.model ?? 'auto'} stream=${body.stream === true} messages=${chatMessages.length} tools=${lmTools.length}`);
 
     const modelName = selectResponseModelName(model, body.model);
     const context: ResponsesContext = {
@@ -113,6 +115,15 @@ export async function handleResponsesCreate(req: IncomingMessage, res: ServerRes
     };
 
     const cancellationToken = new vscode.CancellationTokenSource();
+    let completed = false;
+    const cancelIfOpen = (): void => {
+      if (!completed) {
+        verbose(`Responses request cancelled by client id=${context.requestId}`);
+        cancellationToken.cancel();
+      }
+    };
+    req.once('aborted', cancelIfOpen);
+    res.once('close', cancelIfOpen);
     try {
       const response = await model.sendRequest(
         lmMessages as vscode.LanguageModelChatMessage[],
@@ -126,7 +137,7 @@ export async function handleResponsesCreate(req: IncomingMessage, res: ServerRes
         } else {
           const collected = await collectResponseData(response);
           if (context.toolChoice === 'required' && collected.toolCalls.length === 0) {
-            writeErrorResponse(
+            writeResponsesError(
               res,
               422,
               'tool_choice=required but model produced no tool calls',
@@ -138,14 +149,17 @@ export async function handleResponsesCreate(req: IncomingMessage, res: ServerRes
           writeJson(res, 200, toResponsesApiResponse(context, collected.text, collected.toolCalls));
         }
       } finally {
+        completed = true;
         disposeResponse(response);
       }
     } finally {
+      req.off('aborted', cancelIfOpen);
+      res.off('close', cancelIfOpen);
       cancellationToken.dispose();
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    writeErrorResponse(res, 500, errorMessage || 'internal_error', 'server_error', 'internal_error');
+    writeResponsesError(res, 500, errorMessage || 'internal_error', 'server_error', 'internal_error');
   } finally {
     state.activeRequests--;
     verbose(`Responses request complete (active=${state.activeRequests})`);
@@ -157,9 +171,7 @@ function mergeTools(body: ResponsesRequest): Tool[] {
     return [];
   }
 
-  const baseTools = body.tools ?? [];
-  const functionTools = convertFunctionsToTools(undefined);
-  const combined = functionTools.length > 0 ? [...baseTools, ...functionTools] : baseTools;
+  const combined = normalizeResponsesTools(body.tools);
 
   if (
     body.tool_choice &&
@@ -180,11 +192,44 @@ function mergeTools(body: ResponsesRequest): Tool[] {
   return combined;
 }
 
+function normalizeResponsesTools(tools: ResponsesRequest['tools']): Tool[] {
+  if (!tools) {
+    return [];
+  }
+
+  const normalized: Tool[] = [];
+  for (const tool of tools) {
+    if (!tool || typeof tool !== 'object' || tool.type !== 'function') {
+      continue;
+    }
+
+    if ('function' in tool && tool.function && typeof tool.function === 'object') {
+      normalized.push(tool as Tool);
+      continue;
+    }
+
+    const flatTool = tool as ResponsesFunctionTool;
+    normalized.push({
+      type: 'function',
+      function: {
+        name: flatTool.name,
+        description: flatTool.description,
+        parameters: flatTool.parameters,
+      },
+    });
+  }
+  return normalized.filter((tool) => typeof tool.function.name === 'string' && tool.function.name.length > 0);
+}
+
 function toChatMessages(body: ResponsesRequest): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   if (typeof body.instructions === 'string' && body.instructions.trim().length > 0) {
     messages.push({ role: 'system', content: body.instructions });
+  }
+
+  if (!('input' in body)) {
+    return messages;
   }
 
   if (typeof body.input === 'string') {
@@ -198,16 +243,104 @@ function toChatMessages(body: ResponsesRequest): ChatMessage[] {
     }
     const record = item as Record<string, unknown>;
     const role = resolveInputRole(record);
-    if (!role) {
+    if (role) {
+      messages.push({
+        role,
+        content: extractResponsesContent(record),
+      });
       continue;
     }
-    messages.push({
-      role,
-      content: 'content' in record ? (record.content as ChatMessage['content']) : '',
-    });
+
+    const converted = convertResponsesItem(record);
+    if (converted) {
+      messages.push(converted);
+    }
   }
 
   return messages;
+}
+
+function extractResponsesContent(record: Record<string, unknown>): ChatMessage['content'] {
+  if (!('content' in record)) {
+    return '';
+  }
+
+  const content = record.content;
+  if (typeof content === 'string' || content === null) {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return stringifyContent(content);
+  }
+
+  const normalized: MessageContent[] = [];
+  for (const part of content) {
+    if (typeof part === 'string') {
+      normalized.push({ type: 'text', text: part });
+      continue;
+    }
+    if (part && typeof part === 'object') {
+      const recordPart = part as Record<string, unknown>;
+      const text = typeof recordPart.text === 'string'
+        ? recordPart.text
+        : typeof recordPart.input_text === 'string'
+          ? recordPart.input_text
+          : typeof recordPart.output_text === 'string'
+            ? recordPart.output_text
+            : stringifyContent(recordPart);
+      normalized.push({ type: typeof recordPart.type === 'string' ? recordPart.type : 'text', text });
+    }
+  }
+  return normalized;
+}
+
+function convertResponsesItem(record: Record<string, unknown>): ChatMessage | undefined {
+  if (record.type === 'function_call_output') {
+    return {
+      role: 'tool',
+      tool_call_id: typeof record.call_id === 'string' ? record.call_id : '',
+      content: stringifyContent(record.output),
+    };
+  }
+
+  if (record.type === 'function_call') {
+    const callId = typeof record.call_id === 'string'
+      ? record.call_id
+      : typeof record.id === 'string'
+        ? record.id
+        : `call_${Math.random().toString(36).slice(2)}`;
+    return {
+      role: 'assistant',
+      content: null,
+      tool_calls: [
+        {
+          id: callId,
+          type: 'function',
+          function: {
+            name: typeof record.name === 'string' ? record.name : 'function',
+            arguments: typeof record.arguments === 'string' ? record.arguments : stringifyContent(record.arguments),
+          },
+        },
+      ],
+    };
+  }
+
+  if (record.type === 'reasoning' || record.type === 'summary_text') {
+    return { role: 'assistant', content: stringifyContent(record.summary ?? record.content ?? record.text ?? '') };
+  }
+
+  return undefined;
+}
+
+function stringifyContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === undefined || value === null) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function resolveInputRole(record: Record<string, unknown>): ChatMessage['role'] | undefined {
@@ -238,10 +371,10 @@ async function resolveModel(
 
   const hasLanguageModels = hasLMApi();
   if (requestedModel && hasLanguageModels) {
-    writeErrorResponse(res, 404, 'model not found', 'invalid_request_error', 'model_not_found', 'not_found');
+    writeResponsesError(res, 404, 'model not found', 'invalid_request_error', 'model_not_found', 'not_found');
   } else {
     const reason = hasLanguageModels ? 'copilot_model_unavailable' : 'missing_language_model_api';
-    writeErrorResponse(res, 503, 'Copilot unavailable', 'server_error', 'copilot_unavailable', reason);
+    writeResponsesError(res, 503, 'Copilot unavailable', 'server_error', 'copilot_unavailable', reason);
   }
   return undefined;
 }
@@ -395,16 +528,16 @@ async function streamResponse(
     });
   }
 
-  writeEvent(res, {
-    type: 'response.output_text.done',
-    sequence_number: sequence++,
-    output_index: 0,
-    content_index: 0,
-    item_id: messageId,
-    text: fullText,
-  });
-
   if (fullText.length > 0 || toolCalls.length === 0) {
+    writeEvent(res, {
+      type: 'response.output_text.done',
+      sequence_number: sequence++,
+      output_index: 0,
+      content_index: 0,
+      item_id: messageId,
+      text: fullText,
+    });
+
     writeEvent(res, {
       type: 'response.output_item.done',
       sequence_number: sequence++,
@@ -441,7 +574,6 @@ async function streamResponse(
     },
   });
 
-  res.write('data: [DONE]\n\n');
   res.end();
 }
 
@@ -506,7 +638,25 @@ function normalizeToolChoice(choice: ResponsesRequest['tool_choice']): 'none' | 
 }
 
 function writeEvent(res: ServerResponse, payload: Record<string, unknown>): void {
+  const eventType = typeof payload.type === 'string' ? payload.type : 'message';
+  res.write(`event: ${eventType}\n`);
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function writeResponsesError(
+  res: ServerResponse,
+  status: number,
+  message: string,
+  type: string,
+  code: string,
+  reason?: string
+): void {
+  verbose(`Responses error status=${status} code=${code} message=${message}${reason ? ` reason=${reason}` : ''}`);
+  if (reason) {
+    writeErrorResponse(res, status, message, type, code, reason);
+    return;
+  }
+  writeErrorResponse(res, status, message, type, code);
 }
 
 function selectResponseModelName(model: vscode.LanguageModelChat, requestedModel: string | undefined): string {

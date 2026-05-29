@@ -196,6 +196,7 @@ For extension development (`F5`), launch configs can override settings via env v
 - `BRIDGE_ENABLED=1` forces bridge startup
 - `BRIDGE_PORT=3333` binds to port `3333`
 - `BRIDGE_VERBOSE=1` enables verbose logs
+- `BRIDGE_MAX_CONCURRENT=4` allows short-lived client reconnect overlap during local agent testing
 
 These overrides are intended for local debugging convenience.
 

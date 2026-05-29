@@ -57,7 +57,42 @@ curl -sS -N \
 echo
 echo
 
-echo "== 6) Chat completions still works =="
+echo "== 6) Responses stream (Codex-style payload) =="
+curl -sS -N \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"model\":\"${MODEL}\",
+    \"stream\":true,
+    \"input\":[
+      {
+        \"type\":\"message\",
+        \"role\":\"user\",
+        \"content\":[{\"type\":\"input_text\",\"text\":\"Reply with exactly: CODEX_STYLE_OK\"}]
+      },
+      {
+        \"type\":\"function_call_output\",
+        \"call_id\":\"call_previous_example\",
+        \"output\":\"previous tool output\"
+      }
+    ],
+    \"tools\":[
+      {
+        \"type\":\"function\",
+        \"name\":\"get_weather\",
+        \"description\":\"Get weather by city\",
+        \"parameters\":{
+          \"type\":\"object\",
+          \"properties\":{\"city\":{\"type\":\"string\"}},
+          \"required\":[\"city\"]
+        }
+      }
+    ]
+  }" \
+  "${BASE_URL}/v1/responses"
+echo
+echo
+
+echo "== 7) Chat completions still works =="
 curl -sS -i \
   -H "Content-Type: application/json" \
   -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: CHAT_OK\"}]}" \

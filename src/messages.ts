@@ -37,6 +37,14 @@ export interface ToolFunction {
   readonly parameters?: object;
 }
 
+export interface ResponsesFunctionTool {
+  readonly type: 'function';
+  readonly name: string;
+  readonly description?: string;
+  readonly parameters?: object;
+  readonly strict?: boolean;
+}
+
 export interface ChatCompletionRequest {
   readonly model?: string;
   readonly messages: ChatMessage[];
@@ -82,6 +90,10 @@ export interface ResponsesInputItem {
   readonly type?: string;
   readonly role?: ResponsesInputMessage['role'];
   readonly content?: ResponsesInputMessage['content'];
+  readonly call_id?: string;
+  readonly output?: unknown;
+  readonly name?: string;
+  readonly arguments?: string;
   readonly [key: string]: unknown;
 }
 
@@ -90,7 +102,7 @@ export interface ResponsesRequest {
   readonly input: string | ResponsesInputMessage[] | ResponsesInputItem[];
   readonly instructions?: string;
   readonly stream?: boolean;
-  readonly tools?: Tool[];
+  readonly tools?: (Tool | ResponsesFunctionTool)[];
   readonly tool_choice?: ChatCompletionRequest['tool_choice'];
   readonly parallel_tool_calls?: boolean;
   readonly [key: string]: unknown;
@@ -135,7 +147,7 @@ export const isChatCompletionRequest = (body: unknown): body is ChatCompletionRe
 export const isResponsesRequest = (body: unknown): body is ResponsesRequest => {
   if (typeof body !== 'object' || body === null) return false;
   const candidate = body as Record<string, unknown>;
-  if (!('input' in candidate)) return false;
+  if (!('input' in candidate)) return typeof candidate.instructions === 'string';
 
   const input = candidate.input;
   if (typeof input === 'string') return input.length > 0;
@@ -148,7 +160,7 @@ export const isResponsesRequest = (body: unknown): body is ResponsesRequest => {
     if ('type' in record && record.type === 'message' && 'role' in record) {
       return isValidRole(record.role);
     }
-    return false;
+    return typeof record.type === 'string';
   });
 };
 

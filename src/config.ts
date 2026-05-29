@@ -32,6 +32,7 @@ export const getBridgeConfig = (): BridgeConfig => {
   const enabledOverride = envBool('BRIDGE_ENABLED');
   const portOverride = envInt('BRIDGE_PORT');
   const verboseOverride = envBool('BRIDGE_VERBOSE');
+  const maxConcurrentOverride = envInt('BRIDGE_MAX_CONCURRENT');
   const resolved = {
     enabled: enabledOverride ?? cfg.get('enabled', false),
     host: LOOPBACK_HOST,
@@ -39,7 +40,7 @@ export const getBridgeConfig = (): BridgeConfig => {
     token: cfg.get('token', '').trim(),
     historyWindow: cfg.get('historyWindow', 3),
     verbose: verboseOverride ?? cfg.get('verbose', false),
-    maxConcurrent: cfg.get('maxConcurrent', 1),
+    maxConcurrent: maxConcurrentOverride ?? cfg.get('maxConcurrent', 1),
   } satisfies BridgeConfig;
   return resolved;
 };
