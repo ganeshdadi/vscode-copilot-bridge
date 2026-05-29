@@ -82,6 +82,7 @@ export async function handleResponsesCreate(req: IncomingMessage, res: ServerRes
   try {
     const body = await readJson(req);
     if (!isResponsesRequest(body)) {
+      verbose(`Rejected responses payload: ${describeRejectedResponsesPayload(body)}`);
       writeResponsesError(res, 400, 'invalid request', 'invalid_request_error', 'invalid_payload');
       return;
     }
@@ -192,6 +193,35 @@ function mergeTools(body: ResponsesRequest): Tool[] {
   return combined;
 }
 
+function describeRejectedResponsesPayload(body: unknown): string {
+  if (!body || typeof body !== 'object') {
+    return `bodyType=${typeof body}`;
+  }
+
+  const record = body as Record<string, unknown>;
+  const keys = Object.keys(record).join(',');
+  const model = typeof record.model === 'string' ? record.model : 'n/a';
+  const input = record.input;
+  if (!Array.isArray(input)) {
+    return `keys=${keys} model=${model} inputType=${typeof input}`;
+  }
+
+  const items = input.map((item, index) => {
+    if (typeof item === 'string') {
+      return `${index}:string`;
+    }
+    if (!item || typeof item !== 'object') {
+      return `${index}:${typeof item}`;
+    }
+    const inputItem = item as Record<string, unknown>;
+    const itemType = typeof inputItem.type === 'string' ? inputItem.type : 'none';
+    const role = typeof inputItem.role === 'string' ? inputItem.role : 'none';
+    const itemKeys = Object.keys(inputItem).join('|');
+    return `${index}:type=${itemType},role=${role},keys=${itemKeys}`;
+  });
+  return `keys=${keys} model=${model} inputItems=${input.length} itemDetails=[${items.join('; ')}]`;
+}
+
 function normalizeResponsesTools(tools: ResponsesRequest['tools']): Tool[] {
   if (!tools) {
     return [];
@@ -238,6 +268,11 @@ function toChatMessages(body: ResponsesRequest): ChatMessage[] {
   }
 
   for (const item of body.input) {
+    if (typeof item === 'string') {
+      messages.push({ role: 'user', content: item });
+      continue;
+    }
+
     if (typeof item !== 'object' || item === null) {
       continue;
     }
@@ -354,6 +389,9 @@ function resolveInputRole(record: Record<string, unknown>): ChatMessage['role'] 
 }
 
 function asChatRole(role: string): ChatMessage['role'] | undefined {
+  if (role === 'developer') {
+    return 'system';
+  }
   if (role === 'system' || role === 'user' || role === 'assistant' || role === 'tool') {
     return role;
   }

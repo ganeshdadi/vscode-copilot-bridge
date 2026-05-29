@@ -79,7 +79,7 @@ export interface ChatCompletionRequest {
 }
 
 export interface ResponsesInputMessage {
-  readonly role: 'system' | 'user' | 'assistant' | 'tool';
+  readonly role: 'system' | 'developer' | 'user' | 'assistant' | 'tool';
   readonly content?: string | MessageContent[] | null;
   readonly tool_calls?: ToolCall[];
   readonly tool_call_id?: string;
@@ -111,6 +111,10 @@ export interface ResponsesRequest {
 const VALID_ROLES = ['system', 'user', 'assistant', 'tool'] as const;
 type Role = typeof VALID_ROLES[number];
 const isValidRole = (role: unknown): role is Role => typeof role === 'string' && VALID_ROLES.includes(role as Role);
+const VALID_RESPONSES_ROLES = ['system', 'developer', 'user', 'assistant', 'tool'] as const;
+type ResponsesRole = typeof VALID_RESPONSES_ROLES[number];
+const isValidResponsesRole = (role: unknown): role is ResponsesRole =>
+  typeof role === 'string' && VALID_RESPONSES_ROLES.includes(role as ResponsesRole);
 
 export const isChatMessage = (msg: unknown): msg is ChatMessage => {
   if (typeof msg !== 'object' || msg === null) return false;
@@ -154,11 +158,12 @@ export const isResponsesRequest = (body: unknown): body is ResponsesRequest => {
 
   if (!Array.isArray(input) || input.length === 0) return false;
   return input.every((item) => {
+    if (typeof item === 'string') return item.length > 0;
     if (typeof item !== 'object' || item === null) return false;
     const record = item as Record<string, unknown>;
-    if ('role' in record) return isValidRole(record.role);
+    if ('role' in record) return isValidResponsesRole(record.role);
     if ('type' in record && record.type === 'message' && 'role' in record) {
-      return isValidRole(record.role);
+      return isValidResponsesRole(record.role);
     }
     return typeof record.type === 'string';
   });
